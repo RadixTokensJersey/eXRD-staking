@@ -1,0 +1,36 @@
+Arguments: 
+  /home/aleworm/.nvm/versions/node/v12.18.0/bin/node /usr/share/yarn/bin/yarn.js init
+
+PATH: 
+  /home/aleworm/bin:/home/aleworm/.local/bin:/home/aleworm/.nvm/versions/node/v12.18.0/bin:/home/aleworm/.sdkman/candidates/gradle/current/bin:/home/aleworm/bin:/home/aleworm/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games:/c/Program Files/WindowsApps/CanonicalGroupLimited.Ubuntu20.04onWindows_2004.2020.812.0_x64__79rhkp1fndgsc:/c/Program Files/Oculus/Support/oculus-runtime:/c/Program Files (x86)/Common Files/Oracle/Java/javapath:/c/Windows/system32:/c/Windows:/c/Windows/System32/Wbem:/c/Windows/System32/WindowsPowerShell/v1.0/:/c/Windows/System32/OpenSSH/:/c/Program Files (x86)/NVIDIA Corporation/PhysX/Common:/c/Program Files/NVIDIA Corporation/NVIDIA NvDLISR:/c/WINDOWS/system32:/c/WINDOWS:/c/WINDOWS/System32/Wbem:/c/WINDOWS/System32/WindowsPowerShell/v1.0/:/c/WINDOWS/System32/OpenSSH/:/c/ProgramData/chocolatey/bin:/c/Program Files/Docker/Docker/resources/bin:/c/ProgramData/DockerDesktop/version-bin:/c/Users/aleworm/AppData/Local/Microsoft/WindowsApps:/c/Users/aleworm/AppData/Local/Programs/Microsoft VS Code/bin:~/.local/bin/virtualenv:/mnt/c/Program\ Files/Docker/Docker/resources/bin:~/.local/bin/virtualenv:/mnt/c/Program\ Files/Docker/Docker/resources/bin
+
+Yarn version: 
+  1.22.4
+
+Node version: 
+  12.18.0
+
+Platform: 
+  linux x64
+
+Trace: 
+  Error: canceled
+      at Interface.<anonymous> (/usr/share/yarn/lib/cli.js:137008:13)
+      at Interface.emit (events.js:315:20)
+      at Interface._ttyWrite (readline.js:866:16)
+      at ReadStream.onkeypress (readline.js:205:10)
+      at ReadStream.emit (events.js:315:20)
+      at emitKeys (internal/readline/utils.js:335:14)
+      at emitKeys.next (<anonymous>)
+      at ReadStream.onData (readline.js:1133:36)
+      at ReadStream.emit (events.js:315:20)
+      at addChunk (_stream_readable.js:295:12)
+
+npm manifest: 
+  No manifest
+
+yarn manifest: 
+  No manifest
+
+Lockfile: 
+  No lockfile
