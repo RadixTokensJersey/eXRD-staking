@@ -23,6 +23,19 @@ import "./TokenPool.sol";
  *
  */
 contract RewardPool is IStaking {
+    struct Accounting {
+            uint256 globalTotalStakingShareSeconds;
+            uint256 globalLastAccountingTimestampSec;
+            uint256 globalLockedPoolBalance;
+            uint256 globalUnlockedPoolBalance;
+    }
+
+    struct RewardData {
+        uint256 stakingShareSecondsToBurn;
+        uint256 sharesLeftToBurn;
+        uint256 rewardAmount;
+    }
+        
     using SafeMath for uint256;
 
     event Staked(
@@ -41,6 +54,7 @@ contract RewardPool is IStaking {
     event TokensLocked(uint256 amount, uint256 durationSec, uint256 total);
     // amount: Unlocked tokens, total: Total locked tokens
     event TokensUnlocked(uint256 amount, uint256 total);
+    event AccountingUpdated();
 
     TokenPool private _stakingPool;
     TokenPool private _unlockedPool;
@@ -240,6 +254,246 @@ contract RewardPool is IStaking {
         _unstake(amount);
     }
 
+    function unlockScheduleSharesPure(uint256 s, uint256 timestamp) private view returns (uint256) {
+        UnlockSchedule memory schedule = unlockSchedules[s];
+
+        if (schedule.unlockedShares >= schedule.initialLockedShares) {
+            return 0;
+        }
+
+        uint256 sharesToUnlock = 0;
+        // Special case to handle any leftover dust from integer division
+        if (timestamp >= schedule.endAtSec) {
+            sharesToUnlock = (
+                schedule.initialLockedShares.sub(schedule.unlockedShares)
+            );
+        } else {
+            sharesToUnlock = timestamp
+                .sub(schedule.lastUnlockTimestampSec)
+                .mul(schedule.initialLockedShares)
+                .div(schedule.durationSec);
+        }
+
+        return sharesToUnlock;
+    }
+
+    function computeNewRewardPure(
+        uint256 newStakingShareSecondsToBurn,
+        uint256 stakeTimeSec,
+        uint256 rewardAmount,
+        uint256 totalUnlocked,
+        uint256 totalStakingShareSeconds,
+        bool withBonus
+    ) internal view returns (uint256) {
+        uint256 newRewardTokens = totalUnlocked
+            .mul(newStakingShareSecondsToBurn)
+            .div(totalStakingShareSeconds);
+
+        if ((stakeTimeSec >= bonusPeriodSec) || !withBonus) {
+            return rewardAmount.add(newRewardTokens);
+        }
+
+        uint256 oneHundredPct = 10**BONUS_DECIMALS;
+
+        uint256 growthFactor = stakeTimeSec.mul(oneHundredPct).div(bonusPeriodSec);
+
+        uint256 term1 = (startBonus*oneHundredPct**3).div(oneHundredPct).mul(newRewardTokens);
+        uint256 term2 = (oneHundredPct.sub(startBonus).mul(growthParamX).mul(growthFactor**2)*oneHundredPct**3).div(oneHundredPct**3).mul(newRewardTokens);
+        uint256 term3 = (oneHundredPct.sub(startBonus).mul(growthParamY).mul(growthFactor)*oneHundredPct**3).div(oneHundredPct**2).mul(newRewardTokens);
+
+        uint256 bonusedReward = term1.add(term2).add(term3).div(oneHundredPct**3);
+
+        return rewardAmount.add(bonusedReward);
+    }
+
+    function unlockTokensPure(uint256 timestamp) public view returns (
+        uint256 lockedPoolBalance,
+        uint256 unlockedPoolBalance
+    ) {
+        uint256 globalTotalLockedShares = totalLockedShares;
+        unlockedPoolBalance = _unlockedPool.balance();
+        lockedPoolBalance = _lockedPool.balance();
+        uint256 unlockedTokens = 0;
+        uint256 lockedTokens = totalLocked();
+        
+        if (globalTotalLockedShares == 0) {
+            unlockedTokens = lockedTokens;
+        } else {
+            uint256 unlockedShares = 0;
+            for (uint256 s = 0; s < unlockSchedules.length; s++) {
+                unlockedShares = unlockedShares.add(unlockScheduleSharesPure(s, timestamp));
+            }
+            unlockedTokens = unlockedShares.mul(lockedTokens).div(
+                globalTotalLockedShares
+            );
+            globalTotalLockedShares = globalTotalLockedShares.sub(unlockedShares);
+        }
+
+        if (unlockedTokens > 0) {
+            /*
+            require(
+                _lockedPool.transfer(address(_unlockedPool), unlockedTokens),
+                "TokenGeyser: transfer out of locked pool failed"
+            );
+            */
+            lockedPoolBalance -= unlockedTokens;
+            unlockedPoolBalance += unlockedTokens;
+        }
+
+        return (
+            lockedPoolBalance,
+            unlockedPoolBalance
+        );
+    }
+
+    function updateAccountingPure(uint256 timestamp) public view returns (
+        uint256 globalTotalStakingShareSeconds,
+        uint256 globalLastAccountingTimestampSec,
+        uint256 globalLockedPoolBalance,
+        uint256 globalUnlockedPoolBalance
+    ){
+        globalTotalStakingShareSeconds = _totalStakingShareSeconds;
+        globalLastAccountingTimestampSec = _lastAccountingTimestampSec;
+
+        (
+            uint256 lockedPoolBalance,
+            uint256 unlockedPoolBalance
+        ) = unlockTokensPure(timestamp);
+
+        // Global accounting
+        uint256 newStakingShareSeconds = timestamp
+            .sub(globalLastAccountingTimestampSec)
+            .mul(totalStakingShares);
+        globalTotalStakingShareSeconds = globalTotalStakingShareSeconds.add(
+            newStakingShareSeconds
+        );
+        globalLastAccountingTimestampSec = timestamp;
+
+        return (
+            globalTotalStakingShareSeconds,
+            globalLastAccountingTimestampSec,
+            lockedPoolBalance,
+            unlockedPoolBalance
+        );
+    }
+
+    /**
+     * @return The total number of distribution tokens that would be rewarded.
+     */
+    function unstakeQuery(uint256 amount, bool withBonus, uint256 bonusTimestamp, uint256 unlockTimestamp) public view returns (uint256) {
+        bonusTimestamp += 30;
+        unlockTimestamp += 30;
+
+        if(bonusTimestamp == 0) {
+            bonusTimestamp = now;
+        }
+
+        if(unlockTimestamp == 0) {
+            unlockTimestamp = now;
+        }
+
+        Accounting memory accounting;
+
+        (
+            accounting.globalTotalStakingShareSeconds,
+            accounting.globalLastAccountingTimestampSec,
+            accounting.globalLockedPoolBalance,
+            accounting.globalUnlockedPoolBalance
+        ) = updateAccountingPure(unlockTimestamp);  
+        
+        // checks
+        if(amount < 1) {
+            return 0;
+        }
+        
+        require(
+            totalStakedFor(msg.sender) >= amount,
+            "TokenGeyser: unstake amount is greater than total user stakes"
+        );
+
+        // 1. User Accounting
+        Stake[] memory accountStakes = _userStakes[msg.sender];
+
+        RewardData memory data;
+
+        // Redeem from most recent stake and go backwards in time.
+        data.stakingShareSecondsToBurn = 0;
+        data.sharesLeftToBurn = totalStakingShares.mul(amount).div(
+            totalStaked()
+        );
+        data.rewardAmount = 0;
+
+        uint256 i = accountStakes.length - 1;
+
+        while (data.sharesLeftToBurn > 0) {
+            uint256 newStakingShareSecondsToBurn = 0;
+
+            if (
+                accountStakes[i].stakingShares <=
+                data.sharesLeftToBurn
+            ) {
+                // fully redeem a past stake
+                newStakingShareSecondsToBurn = accountStakes[accountStakes
+                    .length - 1]
+                    .stakingShares
+                    .mul(
+                    unlockTimestamp.sub(
+                        accountStakes[i].timestampSec
+                    )
+                );
+
+                
+                data.rewardAmount = computeNewRewardPure(
+                    newStakingShareSecondsToBurn,
+                    bonusTimestamp.sub(
+                        accountStakes[i].timestampSec
+                    ),
+                    data.rewardAmount,
+                    accounting.globalUnlockedPoolBalance,
+                    accounting.globalTotalStakingShareSeconds,
+                    withBonus
+                );
+                
+                data.stakingShareSecondsToBurn = data.stakingShareSecondsToBurn.add(
+                    newStakingShareSecondsToBurn
+                );
+                data.sharesLeftToBurn = data.sharesLeftToBurn.sub(
+                    accountStakes[i].stakingShares
+                );
+                i--;
+            } else {
+                // partially redeem a past stake
+                newStakingShareSecondsToBurn = data.sharesLeftToBurn.mul(
+                    unlockTimestamp.sub(
+                        accountStakes[i].timestampSec
+                    )
+                );
+
+                data.rewardAmount = computeNewRewardPure(
+                    newStakingShareSecondsToBurn,
+                    unlockTimestamp.sub(
+                        accountStakes[i].timestampSec
+                    ),
+                    data.rewardAmount,
+                    accounting.globalUnlockedPoolBalance,
+                    accounting.globalTotalStakingShareSeconds,
+                    withBonus
+                );
+
+                data.stakingShareSecondsToBurn = data.stakingShareSecondsToBurn.add(
+                    newStakingShareSecondsToBurn
+                );
+                accountStakes[i]
+                    .stakingShares = accountStakes[i]
+                    .stakingShares
+                    .sub(data.sharesLeftToBurn);
+                data.sharesLeftToBurn = 0;
+            }
+        }
+
+        return data.rewardAmount;
+    }
+
     /**
      * @dev Unstakes a certain amount of previously deposited tokens. User also receives their
      * alotted number of distribution tokens.
@@ -368,7 +622,7 @@ contract RewardPool is IStaking {
         uint256 currentRewardTokens,
         uint256 stakingShareSeconds,
         uint256 stakeTimeSec
-    ) private view returns (uint256) {
+    ) public view returns (uint256) {
         uint256 newRewardTokens = totalUnlocked().mul(stakingShareSeconds).div(
             _totalStakingShareSeconds
         );
@@ -466,6 +720,8 @@ contract RewardPool is IStaking {
                 _totalStakingShareSeconds
             )
             : 0;
+
+        emit AccountingUpdated();
 
         return (
             totalLocked(),
