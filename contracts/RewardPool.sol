@@ -75,7 +75,6 @@ contract RewardPool is IStaking {
     uint256 public totalLockedShares = 0;
     uint256 public totalStakingShares = 0;
     uint256 public _totalStakingShareSeconds = 0;
-    uint256 public startTime = now;
     uint256 public _lastAccountingTimestampSec = now;
     uint256 public _maxUnlockSchedules = 0;
     uint256 public _initialSharesPerToken = 0;
@@ -158,7 +157,7 @@ contract RewardPool is IStaking {
         _maxUnlockSchedules = maxUnlockSchedules;
         _initialSharesPerToken = initialSharesPerToken;
     }
-    
+
     function stakeCount(address account) public view returns (uint256) {
         return _userStakes[account].length;
     }
@@ -559,7 +558,7 @@ contract RewardPool is IStaking {
                     newStakingShareSecondsToBurn,
                     stakeTimeSec
                 );
-                
+
                 stakingShareSecondsToBurn = stakingShareSecondsToBurn.add(
                     newStakingShareSecondsToBurn
                 );
@@ -622,7 +621,7 @@ contract RewardPool is IStaking {
         uint256 currentRewardTokens,
         uint256 stakingShareSeconds,
         uint256 stakeTimeSec
-    ) public view returns (uint256) {
+    ) private view returns (uint256) {
         uint256 newRewardTokens = totalUnlocked().mul(stakingShareSeconds).div(
             _totalStakingShareSeconds
         );
@@ -780,7 +779,7 @@ contract RewardPool is IStaking {
         updateAccounting();
 
         uint256 lockedTokens = totalLocked();
-        uint256 mintedLockedShares = (lockedTokens > 0) // 100
+        uint256 mintedLockedShares = (lockedTokens > 0)
             ? totalLockedShares.mul(amount).div(lockedTokens)
             : amount.mul(_initialSharesPerToken);
 
@@ -791,7 +790,7 @@ contract RewardPool is IStaking {
         schedule.durationSec = durationSec;
         unlockSchedules.push(schedule);
 
-        totalLockedShares = totalLockedShares.add(mintedLockedShares); // 100
+        totalLockedShares = totalLockedShares.add(mintedLockedShares);
 
         require(
             _lockedPool.token().transferFrom(
