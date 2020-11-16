@@ -158,7 +158,7 @@ contract RewardPool is IStaking {
         _maxUnlockSchedules = maxUnlockSchedules;
         _initialSharesPerToken = initialSharesPerToken;
     }
-
+    
     function stakeCount(address account) public view returns (uint256) {
         return _userStakes[account].length;
     }
@@ -559,7 +559,7 @@ contract RewardPool is IStaking {
                     newStakingShareSecondsToBurn,
                     stakeTimeSec
                 );
-
+                
                 stakingShareSecondsToBurn = stakingShareSecondsToBurn.add(
                     newStakingShareSecondsToBurn
                 );
@@ -766,7 +766,14 @@ contract RewardPool is IStaking {
     {
         require(
             unlockSchedules.length < _maxUnlockSchedules,
-            "TokenGeyser: reached maximum unlock schedules"
+            "Reached maximum unlock schedules"
+        );
+
+        uint256 minTokenAmount = 1000000;
+
+        require(
+            amount >= minTokenAmount.mul((10**uint256(18))),
+            "Amount too low for unlock schedule"
         );
 
         // Update lockedTokens amount before using it in computations after.
